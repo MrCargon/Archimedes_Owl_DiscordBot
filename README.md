@@ -1,5 +1,5 @@
 # Archimedes Owl Discord Artificial Intelligence Bot 🤖
-#### Your fledglings Robotic Owl Discord AI Companion!
+#### Your fledglings Robotic Owl Discord AI Companion !
 
 ## Features and commands 🌟
 
