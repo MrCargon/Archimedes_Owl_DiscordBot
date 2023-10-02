@@ -14,7 +14,7 @@ from discord import Embed, app_commands
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
-from bot_utilities.ai_utils import generate_personal_message, generate_response, generate_image_prodia, poly_image_gen, generate_gpt4_response, dall_e_gen, sdxl
+from bot_utilities.ai_utils import generate_response, generate_image_prodia, poly_image_gen, generate_gpt4_response, dall_e_gen, sdxl, generate_trending_git_report
 from bot_utilities.response_util import split_response, translate_to_en, get_random_prompt
 from bot_utilities.discord_util import check_token, get_discord_token
 from bot_utilities.config_loader import config, load_current_language, load_instructions
@@ -75,6 +75,7 @@ def fetch_chat_models():
 chat_models = fetch_chat_models()
 model_blob = "\n".join(chat_models)
 
+
 @bot.event
 async def on_ready():
     await bot.tree.sync()
@@ -91,7 +92,7 @@ async def on_ready():
     print(f"\033[1;38;5;202mAvailable models: {model_blob}\033[0m")
     print(f"\033[1;38;5;46mCurrent model: {config['GPT_MODEL']}\033[0m")
 
-    # Start the sceduler taks
+    # Start the scheduler task
     scheduler.start()
 
     if presences_disabled:
@@ -102,7 +103,8 @@ async def on_ready():
             presence_with_count = presence.replace("{guild_count}", str(len(bot.guilds)))
             delay = config['PRESENCES_CHANGE_DELAY']
             await bot.change_presence(activity=discord.Game(name=presence_with_count))
-            await asyncio.sleep(delay)
+            await asyncio.sleep(delay)        
+
 
  
 # Set up the instructions
@@ -119,6 +121,8 @@ MAX_HISTORY = config['MAX_HISTORY']
 personaname = config['INSTRUCTIONS'].title()
 replied_messages = {}
 active_channels = {}
+scheduled_channels = {}
+channels_scheduled_tasks = {}
 @bot.event
 async def on_message(message):
     if message.author == bot.user and message.reference:
@@ -162,7 +166,7 @@ async def on_message(message):
             await message.add_reaction("🔎")
         channel_id = message.channel.id
         key = f"{message.author.id}-{channel_id}"
-
+            
         user_input = {"id": key, "user_name": message.author.global_name, "message": message.content, "ai_name": personaname}
 
         async with message.channel.typing():
@@ -188,7 +192,6 @@ async def on_message_delete(message):
         await replied_to_message.delete()
         del replied_messages[message.id]
     
-        
 @bot.hybrid_command(name="pfp", description=current_language["pfp"])
 @commands.is_owner()
 async def pfp(ctx, attachment: discord.Attachment):
@@ -224,13 +227,36 @@ async def changeusr(ctx, new_username):
     await asyncio.sleep(3)
     await sent_message.delete()
 
-
 @bot.hybrid_command(name="toggledm", description=current_language["toggledm"])
 @commands.has_permissions(administrator=True)
 async def toggledm(ctx):
     global allow_dm
     allow_dm = not allow_dm
     await ctx.send(f"DMs are now {'on' if allow_dm else 'off'}", delete_after=3)
+
+@bot.hybrid_command(name="schedule")
+@app_commands.choices(task=[
+    app_commands.Choice(name="Generate github reports", value="github"),
+    app_commands.Choice(name="Say hello", value="hello")
+])
+
+async def schedule_task(ctx, task: app_commands.Choice[str] = None):
+    channel_id = ctx.channel.id
+
+    if channel_id in scheduled_tasks["git-report"]:       
+       scheduled_tasks["git-report"].remove(channel_id)
+       with open("channels_scheduled_tasks.json", "w", encoding='utf-8') as f:
+            json.dump(scheduled_tasks, f, indent=4)
+       await ctx.send(f"{ctx.channel.mention} scheduled a git report has been disabled", delete_after=3)
+    else:
+        scheduled_tasks["git-report"].append(channel_id)
+        with open("channels_scheduled_tasks.json", "w", encoding='utf-8') as f:
+            json.dump(scheduled_tasks, f, indent=4)
+        await ctx.send(f"{ctx.channel.mention} scheduled a git report every day", delete_after=3)
+
+if os.path.exists("channels_scheduled_tasks.json"):
+    with open("channels_scheduled_tasks.json", "r", encoding='utf-8') as f:
+        scheduled_tasks = json.load(f)
 
 
 @bot.hybrid_command(name="toggleactive", description=current_language["toggleactive"])
@@ -498,9 +524,11 @@ async def server(ctx):
             embed.add_field(name=guild.name, value=f"*[No invite permission]*", inline=True)
 
     await ctx.send(embed=embed, ephemeral=True)
+    
+
 
 # Define the scheduler task
-@tasks.loop(hours=5)  # Run the task every minute
+@tasks.loop(hours=48)  # Run the task every minute
 async def scheduler():
     current_time = datetime.datetime.now()
     print(current_time, "; hour is: ", current_time.hour)
@@ -512,7 +540,7 @@ async def scheduler():
             print(scheduled_channels)
 
         if scheduled_channels:
-            report = generate_personal_message()
+            report = generate_trending_git_report()
 
             for channel_id in scheduled_channels:
                 channel = bot.get_channel(channel_id)
@@ -531,7 +559,6 @@ async def scheduler():
             # if now.hour == 9 and now.minute == 0:
 
 
-
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.MissingPermissions):
@@ -542,5 +569,5 @@ async def on_command_error(ctx, error):
 if detect_replit():
     from bot_utilities.replit_flask_runner import run_flask_in_thread
     run_flask_in_thread()
-if __name__ == "__main__":
+if __name__ == "__main__":    
     bot.run(TOKEN)
